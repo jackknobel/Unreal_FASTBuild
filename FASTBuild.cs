@@ -46,43 +46,50 @@ namespace UnrealBuildTool
 			get { return "FASTBuild"; }
 		}
 
-		public static bool IsAvailable()
-		{
-			if (FBuildExePathOverride != "")
-			{
-				return File.Exists(FBuildExePathOverride);
-			}
+        public static bool IsAvailable()
+        {
+            // Get the name of the FASTBuild executable.
+            string fbuild = "fbuild";
+            if (BuildHostPlatform.Current.Platform == UnrealTargetPlatform.Win64)
+            {
+                fbuild = "fbuild.exe";
+            }
 
-			// Get the name of the FASTBuild executable.
-			string fbuild = "fbuild";
-			if (BuildHostPlatform.Current.Platform == UnrealTargetPlatform.Win64)
-			{
-				fbuild = "fbuild.exe";
-			}
+            // If the override is set and we can find the directory use the correct build executable as defined above
+            if (FBuildExePathOverride != "")
+            {
+                if (Directory.Exists(FBuildExePathOverride))
+                {
+                    FBuildExePathOverride = Path.Combine(FBuildExePathOverride, fbuild);
+                    if(File.Exists(FBuildExePathOverride))
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
 
-			// Search the path for it
-			string PathVariable = Environment.GetEnvironmentVariable("PATH");
-			foreach (string SearchPath in PathVariable.Split(Path.PathSeparator))
-			{
-				try
-				{
-					string PotentialPath = Path.Combine(SearchPath, fbuild);
-					if (File.Exists(PotentialPath))
-					{
-						return true;
-					}
-				}
-				catch (ArgumentException)
-				{
-					// PATH variable may contain illegal characters; just ignore them.
-				}
-			}
-			return false;
-		}
+            // Search the path for it
+            string PathVariable = Environment.GetEnvironmentVariable("PATH");
+            foreach (string SearchPath in PathVariable.Split(Path.PathSeparator))
+            {
+                try
+                {
+                    string PotentialPath = Path.Combine(SearchPath, fbuild);
+                    if (File.Exists(PotentialPath))
+                    {
+                        return true;
+                    }
+                }
+                catch (ArgumentException)
+                {
+                    // PATH variable may contain illegal characters; just ignore them.
+                }
+            }
+            return false;
+        }
 
-
-
-		private enum FBBuildType
+        private enum FBBuildType
 		{
 			Windows,
 			XBOne,
@@ -465,7 +472,15 @@ namespace UnrealBuildTool
 
 			if (VCEnv != null)
 			{
-				AddText(string.Format(".VSBasePath = '{0}\\'\n", VCEnv.VSInstallDir));
+                string vsInstallRoot = VCEnv.VSInstallDir.FullName;
+
+                // VS17 has changed the location of the clui.dlls
+                if (VCEnv.Compiler == WindowsCompiler.VisualStudio2017)
+                {
+                    vsInstallRoot = Path.GetFullPath(Path.Combine(VCEnv.VSInstallDir.FullName, @"..\..\", "Shared/14.0/"));
+                }
+
+                AddText(string.Format(".VSBasePath = '{0}\\'\n", vsInstallRoot));
 				AddText(string.Format(".WindowsSDKBasePath = '{0}'\n", VCEnv.WindowsSDKDir));
 
 				AddText("Compiler('UE4ResourceCompiler') \n{\n");
@@ -478,8 +493,10 @@ namespace UnrealBuildTool
 				AddText("\t\t'$Root$/c1.dll'\n");
 				AddText("\t\t'$Root$/c1xx.dll'\n");
 				AddText("\t\t'$Root$/c2.dll'\n");
-				string CompilerRoot = VCEnv.VSInstallDir + "/VC/bin/amd64/";
-				if (File.Exists(CompilerRoot + "1033/clui.dll")) //Check English first...
+
+                string CompilerRoot = vsInstallRoot + "/VC/bin/amd64/";
+
+                if (File.Exists(CompilerRoot + "1033/clui.dll")) //Check English first...
 				{
 					AddText("\t\t'$Root$/1033/clui.dll'\n");
 				}
