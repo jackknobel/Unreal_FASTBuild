@@ -15,8 +15,8 @@ namespace UnrealBuildTool
 	{
 		/*---- Configurable User settings ----*/
 
-		// Used to specify a non-standard location for the FBuild.exe, for example if you have not added it to your PATH environment variable.
-		public static string FBuildExePathOverride = "";
+        // Used to specify a non-standard location for the FBuild.exe, for example if you have not added it to your PATH environment variable.
+        public static string FBuildExePathOverride = Path.Combine(BuildConfiguration.RelativeEnginePath, "Extras", "FastBuild");
 
 		// Controls network build distribution
 		private bool bEnableDistribution = true;
@@ -35,9 +35,23 @@ namespace UnrealBuildTool
 			WriteOnly, // This machine will only write from the cache, use for build machines when you have centralized build machines
 		}
 
-		// Cache access mode
-		// Only relevant if bEnableCaching is true;
-		private eCacheMode CacheMode = eCacheMode.ReadWrite;
+        // Cache access mode. Only relevant if bEnableCaching is true;
+        // If set to ReadOnly, will check if this machine is a BuildMachine (Saves us from needing to manually set a value per machine)
+        eCacheMode DefaultCacheMode = eCacheMode.ReadWrite;
+        private eCacheMode CacheMode
+        {
+            get
+            {
+                if (DefaultCacheMode == eCacheMode.ReadOnly)
+                {
+                    if (Environment.GetEnvironmentVariable("IsBuildMachine") == "1")
+                    {
+                        return eCacheMode.WriteOnly;
+                    }
+                }
+                return DefaultCacheMode;
+            }
+        }
 
 		/*--------------------------------------*/
 
