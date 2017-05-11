@@ -486,65 +486,64 @@ namespace UnrealBuildTool
 
 			if (VCEnv != null)
 			{
-                string vsInstallRoot = VCEnv.VSInstallDir.FullName;
+                  AddText(string.Format(".VSBasePath = '{0}\\'\n", VCEnv.VSInstallDir));
+                AddText(string.Format(".WindowsSDKBasePath = '{0}'\n", VCEnv.WindowsSDKDir));
 
-                // VS17 has changed the location of the clui.dlls
-                if (VCEnv.Compiler == WindowsCompiler.VisualStudio2017)
+                AddText("Compiler('UE4ResourceCompiler') \n{\n");
+                AddText(string.Format("\t.Executable = '{0}'\n}}\n\n", VCEnv.ResourceCompilerPath));
+
+                string LinkerRoot = VCEnv.LinkerPath.Directory.ToString();
+
+                AddText("Compiler('UE4Compiler') \n{\n");
+                AddText(string.Format("\t.Root = '{0}'\n", LinkerRoot));
+                AddText(string.Format("\t.Executable = '{0}'\n", VCEnv.CompilerPath));
+                AddText("\t.ExtraFiles =\n\t{\n");
+                AddText("\t\t'$Root$/c1.dll'\n");
+                AddText("\t\t'$Root$/c1xx.dll'\n");
+                AddText("\t\t'$Root$/c2.dll'\n");
+
+                if (File.Exists(LinkerRoot + "1033/clui.dll")) //Check English first...
                 {
-                    vsInstallRoot = Path.GetFullPath(Path.Combine(VCEnv.VSInstallDir.FullName, @"..\..\", "Shared/14.0/"));
+                    AddText("\t\t'$Root$/1033/clui.dll'\n");
+                }
+                else
+                {
+                    var numericDirectories = Directory.GetDirectories(LinkerRoot).Where(d => Path.GetFileName(d).All(char.IsDigit));
+                    var cluiDirectories = numericDirectories.Where(d => Directory.GetFiles(d, "clui.dll").Any());
+                    if (cluiDirectories.Any())
+                    {
+                        AddText(string.Format("\t\t'$Root$/{0}/clui.dll'\n", Path.GetFileName(cluiDirectories.First())));
+                    }
+                }
+                AddText("\t\t'$Root$/mspdbsrv.exe'\n");
+                AddText("\t\t'$Root$/mspdbcore.dll'\n");
+
+                int platformVersionNumber = 140;
+                if (WindowsPlatform.Compiler == WindowsCompiler.VisualStudio2013)
+                {
+                    platformVersionNumber = 120;
                 }
 
-                AddText(string.Format(".VSBasePath = '{0}\\'\n", vsInstallRoot));
-				AddText(string.Format(".WindowsSDKBasePath = '{0}'\n", VCEnv.WindowsSDKDir));
-
-				AddText("Compiler('UE4ResourceCompiler') \n{\n");
-				AddText("\t.Executable = '$WindowsSDKBasePath$/bin/x64/rc.exe'\n}\n\n");
-
-				AddText("Compiler('UE4Compiler') \n{\n");
-				AddText("\t.Root = '$VSBasePath$/VC/bin/amd64'\n");
-				AddText("\t.Executable = '$Root$/cl.exe'\n");
-				AddText("\t.ExtraFiles =\n\t{\n");
-				AddText("\t\t'$Root$/c1.dll'\n");
-				AddText("\t\t'$Root$/c1xx.dll'\n");
-				AddText("\t\t'$Root$/c2.dll'\n");
-
-                string CompilerRoot = vsInstallRoot + "/VC/bin/amd64/";
-
-                if (File.Exists(CompilerRoot + "1033/clui.dll")) //Check English first...
-				{
-					AddText("\t\t'$Root$/1033/clui.dll'\n");
-				}
-				else
-				{
-					var numericDirectories = Directory.GetDirectories(CompilerRoot).Where(d => Path.GetFileName(d).All(char.IsDigit));
-					var cluiDirectories = numericDirectories.Where(d => Directory.GetFiles(d, "clui.dll").Any());
-					if (cluiDirectories.Any())
-					{
-						AddText(string.Format("\t\t'$Root$/{0}/clui.dll'\n", Path.GetFileName(cluiDirectories.First())));
-					}
-				}
-				AddText("\t\t'$Root$/mspdbsrv.exe'\n");
-				AddText("\t\t'$Root$/mspdbcore.dll'\n");
-
-				string platformVersionNumber = "140";
-				if (WindowsPlatform.Compiler == WindowsCompiler.VisualStudio2013)
-				{
-					platformVersionNumber = "120";
-				}
-
-				/* Maybe not needed to compile anymore?
-				if(!WindowsPlatform.bUseWindowsSDK10)
-					AddText(string.Format("\t\t'$VSBasePath$/VC/redist/x64/Microsoft.VC{0}.CRT/msvcr{1}.dll'\n", platformVersionNumber, platformVersionNumber));
-				else
-					AddText("\t\t'$WindowsSDKBasePath$/Redist/ucrt/DLLs/x64/ucrtbase.dll'\n\n");
-				*/
-				AddText(string.Format("\t\t'$Root$/mspft{0}.dll'\n", platformVersionNumber));
+                AddText(string.Format("\t\t'$Root$/mspft{0}.dll'\n", platformVersionNumber));
 				AddText(string.Format("\t\t'$Root$/msobj{0}.dll'\n", platformVersionNumber));
 				AddText(string.Format("\t\t'$Root$/mspdb{0}.dll'\n", platformVersionNumber));
-				AddText(string.Format("\t\t'$VSBasePath$/VC/redist/x64/Microsoft.VC{0}.CRT/msvcp{1}.dll'\n", platformVersionNumber, platformVersionNumber));
-				AddText(string.Format("\t\t'$VSBasePath$/VC/redist/x64/Microsoft.VC{0}.CRT/vccorlib{1}.dll'\n", platformVersionNumber, platformVersionNumber));
-				AddText("\t}\n"); //End extra files
 
+                string MSCRTPath = string.Format("$VSBasePath$/VC/redist/x64/Microsoft.VC{0}.CRT", platformVersionNumber);
+
+                /* We replace 'Tools' with 'Redist' as that is the only major difference in the path
+                 * MSCRT Path: C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Redist\MSVC\14.10.25017\onecore\x64\Microsoft.VC150.CRT
+                 * Linker Path: C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Tools\MSVC\14.10.25017\bin\HostX64\x64
+                 * Strangely as well the platform version number is 150 instead of the expected 140
+                */
+                if (WindowsPlatform.Compiler == WindowsCompiler.VisualStudio2017)
+                {
+                    MSCRTPath = Path.GetFullPath(Path.Combine(LinkerRoot.Replace("Tools", "Redist"), @"..\..\..\", @"onecore\x64\Microsoft.VC150.CRT"));
+                }
+
+                AddText(string.Format("\t\t'{0}/msvcp{1}.dll'\n", MSCRTPath, platformVersionNumber));
+                AddText(string.Format("\t\t'{0}/vccorlib{1}.dll'\n", MSCRTPath, platformVersionNumber));
+
+                AddText("\t}\n"); //End extra files
 				AddText("}\n\n"); //End compiler
 			}
 
