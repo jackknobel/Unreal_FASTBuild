@@ -150,13 +150,46 @@ namespace UnrealBuildTool
 			}
 		}
 
+        private int GetCompilerCPUCount()
+        {
+            // Use WMI to figure out physical cores, excluding hyper threading.
+            int NumCores = Utils.GetPhysicalProcessorCount();
+            if (NumCores == -1)
+            {
+                NumCores = System.Environment.ProcessorCount;
+            }
+            // The number of actions to execute in parallel is trying to keep the CPU busy enough in presence of I/O stalls.
+            int MaxActionsToExecuteInParallel = 0;
+            if (NumCores < System.Environment.ProcessorCount && BuildConfiguration.ProcessorCountMultiplier != 1.0)
+            {
+                // The CPU has more logical cores than physical ones, aka uses hyper-threading. 
+                // Use multiplier if provided
+                MaxActionsToExecuteInParallel = (int)(NumCores * BuildConfiguration.ProcessorCountMultiplier);
+            }
+            else if (NumCores < System.Environment.ProcessorCount && NumCores > 4)
+            {
+                // The CPU has more logical cores than physical ones, aka uses hyper-threading. 
+                // Use average of logical and physical if we have "lots of cores"
+                MaxActionsToExecuteInParallel = (int)(NumCores + System.Environment.ProcessorCount) / 2;
+            }
+            // No hyper-threading. Only kicking off a task per CPU to keep machine responsive.
+            else
+            {
+                MaxActionsToExecuteInParallel = NumCores;
+            }
+
+            return Math.Max(1, Math.Min(MaxActionsToExecuteInParallel, BuildConfiguration.MaxProcessorCount));
+        }
+
 		//Run FASTBuild on the list of actions. Relies on fbuild.exe being in the path.
 		public override bool ExecuteActions(List<Action> Actions)
 		{
 			bool FASTBuildResult = true;
 			if (Actions.Count > 0)
 			{
-				DetectBuildType(Actions);
+                Console.WriteLine(string.Format("Performing {0} actions ({1} in parallel)", Actions.Count, GetCompilerCPUCount()));
+
+				DetectBuildType(Actions);	
 				string FASTBuildFilePath = Path.Combine(BuildConfiguration.BaseIntermediatePath, "fbuild.bff");
 				CreateBffFile(Actions, FASTBuildFilePath);
 				return ExecuteBffFile(FASTBuildFilePath);
@@ -953,7 +986,7 @@ namespace UnrealBuildTool
 			string distArgument = bEnableDistribution ? "-dist" : "";
 
 			//Interesting flags for FASTBuild: -nostoponerror, -verbose, -monitor (if FASTBuild Monitor Visual Studio Extension is installed!)
-			string FBCommandLine = string.Format("-monitor -summary {0} {1} -ide -config {2}", distArgument, cacheArgument, BffFilePath);
+            string FBCommandLine = string.Format("-monitor -summary {0} {1} -ide -config {2} -j{3}", distArgument, cacheArgument, BffFilePath, GetCompilerCPUCount());
 
 			ProcessStartInfo FBStartInfo = new ProcessStartInfo(string.IsNullOrEmpty(FBuildExePathOverride) ? "fbuild" : FBuildExePathOverride, FBCommandLine);
 
