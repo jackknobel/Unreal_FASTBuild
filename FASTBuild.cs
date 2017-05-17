@@ -46,7 +46,7 @@ namespace UnrealBuildTool
                 {
                     if (Environment.GetEnvironmentVariable("IsBuildMachine", EnvironmentVariableTarget.Machine) == "1")
                     {
-                        return eCacheMode.WriteOnly;
+                        return eCacheMode.ReadWrite;
                     }
                 }
                 return DefaultCacheMode;
