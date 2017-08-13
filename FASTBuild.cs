@@ -11,33 +11,47 @@ using System.Linq;
 
 namespace UnrealBuildTool
 {
-	public class FASTBuild : ActionExecutor
-	{
-		/*---- Configurable User settings ----*/
+    class FASTBuild : ActionExecutor
+    {
+        /*---- Configurable User settings ----*/
 
         // Used to specify a non-standard location for the FBuild.exe, for example if you have not added it to your PATH environment variable.
-        public static string FBuildExePathOverride = Path.Combine(BuildConfiguration.RelativeEnginePath, "Extras", "FastBuild");
+        public static string FBuildExePathOverride = Path.Combine(UnrealBuildTool.EngineDirectory.FullName, "Extras", "FastBuild");
 
-		// Controls network build distribution
-		private bool bEnableDistribution = true;
+        // Controls network build distribution
+        private bool bEnableDistribution = true;
 
-		// Controls whether to use caching at all. CachePath and CacheMode are only relevant if this is enabled.
-		private bool bEnableCaching = false;
+        // Controls whether to use caching at all. CachePath and CacheMode are only relevant if this is enabled.
+        private bool bEnableCaching = false;
 
-		// Location of the shared cache, it could be a local or network path (i.e: @"\\DESKTOP-BEAST\FASTBuildCache").
-		// Only relevant if bEnableCaching is true;
-		private string CachePath = ""; //@"\\YourCacheFolderPath";   
+        // Location of the shared cache, it could be a local or network path (i.e: @"\\DESKTOP-BEAST\FASTBuildCache").
+        // Only relevant if bEnableCaching is true;
+        private string CachePath = ""; //@"\\YourCacheFolderPath"; 
 
-		public enum eCacheMode
-		{
-			ReadWrite, // This machine will both read and write to the cache
-			ReadOnly,  // This machine will only read from the cache, use for developer machines when you have centralized build machines
-			WriteOnly, // This machine will only write from the cache, use for build machines when you have centralized build machines
-		}
+        /// <summary>
+        /// Processor count multiplier for local execution. Can be below 1 to reserve CPU for other tasks.
+        /// Note that you can set this to a larger value to get slightly faster build times in many cases,
+        /// but your computer's responsiveness during compiling may be much worse.
+        /// </summary>
+        [XmlConfigFile(Category = "BuildConfiguration")]
+        double ProcessorCountMultiplier = 1.0;
+
+        /// <summary>
+        /// Maximum processor count for local execution. 
+        /// </summary>
+        [XmlConfigFile(Category = "BuildConfiguration")]
+        int MaxProcessorCount = int.MaxValue;
+
+        public enum eCacheMode
+        {
+            ReadWrite, // This machine will both read and write to the cache
+            ReadOnly,  // This machine will only read from the cache, use for developer machines when you have centralized build machines
+            WriteOnly, // This machine will only write from the cache, use for build machines when you have centralized build machines
+        }
 
         // Cache access mode. Only relevant if bEnableCaching is true;
         // If set to ReadOnly, will check if this machine is a BuildMachine (Saves us from needing to manually set a value per machine)
-        eCacheMode DefaultCacheMode = eCacheMode.ReadWrite;
+        eCacheMode DefaultCacheMode = eCacheMode.ReadOnly;
         private eCacheMode CacheMode
         {
             get
@@ -53,7 +67,7 @@ namespace UnrealBuildTool
             }
         }
 
-		/*--------------------------------------*/
+        /*--------------------------------------*/
 
 		public override string Name
 		{
@@ -150,6 +164,7 @@ namespace UnrealBuildTool
 			}
 		}
 
+        // Taken from UBS/LocalExecutor. Used to determine how many cores we can use on this system
         private int GetCompilerCPUCount()
         {
             // Use WMI to figure out physical cores, excluding hyper threading.
@@ -160,11 +175,11 @@ namespace UnrealBuildTool
             }
             // The number of actions to execute in parallel is trying to keep the CPU busy enough in presence of I/O stalls.
             int MaxActionsToExecuteInParallel = 0;
-            if (NumCores < System.Environment.ProcessorCount && BuildConfiguration.ProcessorCountMultiplier != 1.0)
+            if (NumCores < System.Environment.ProcessorCount && ProcessorCountMultiplier != 1.0)
             {
                 // The CPU has more logical cores than physical ones, aka uses hyper-threading. 
                 // Use multiplier if provided
-                MaxActionsToExecuteInParallel = (int)(NumCores * BuildConfiguration.ProcessorCountMultiplier);
+                MaxActionsToExecuteInParallel = (int)(NumCores * ProcessorCountMultiplier);
             }
             else if (NumCores < System.Environment.ProcessorCount && NumCores > 4)
             {
@@ -178,19 +193,19 @@ namespace UnrealBuildTool
                 MaxActionsToExecuteInParallel = NumCores;
             }
 
-            return Math.Max(1, Math.Min(MaxActionsToExecuteInParallel, BuildConfiguration.MaxProcessorCount));
+            return Math.Max(1, Math.Min(MaxActionsToExecuteInParallel, MaxProcessorCount));
         }
 
-		//Run FASTBuild on the list of actions. Relies on fbuild.exe being in the path.
-		public override bool ExecuteActions(List<Action> Actions)
-		{
-			bool FASTBuildResult = true;
+
+        //Run FASTBuild on the list of actions. Relies on fbuild.exe being in the path.
+        public override bool ExecuteActions(List<Action> Actions, bool bLogDetailedActionStats)
+        { 
+            bool FASTBuildResult = true;
 			if (Actions.Count > 0)
 			{
                 Console.WriteLine(string.Format("Performing {0} actions ({1} in parallel)", Actions.Count, GetCompilerCPUCount()));
-
-				DetectBuildType(Actions);	
-				string FASTBuildFilePath = Path.Combine(BuildConfiguration.BaseIntermediatePath, "fbuild.bff");
+				DetectBuildType(Actions);
+				string FASTBuildFilePath = Path.Combine(UnrealBuildTool.EngineDirectory.FullName, "Intermediate", "fbuild.bff");
 				CreateBffFile(Actions, FASTBuildFilePath);
 				return ExecuteBffFile(FASTBuildFilePath);
 			}
@@ -498,7 +513,7 @@ namespace UnrealBuildTool
 			{
 				// This may fail if the caller emptied PATH; we try to ignore the problem since
 				// it probably means we are building for another platform.
-				VCEnv = VCEnvironment.SetEnvironment(CPPTargetPlatform.Win64, false);
+				VCEnv = VCEnvironment.SetEnvironment(CppPlatform.Win64, WindowsPlatform.GetDefaultCompiler());
 			}
 			catch (Exception)
 			{
@@ -517,9 +532,9 @@ namespace UnrealBuildTool
 				AddText(string.Format(".CommonProgramFiles = '{0}'\n", envVars["CommonProgramFiles"]));
 			}
 
-			if (VCEnv != null)
-			{
-                  AddText(string.Format(".VSBasePath = '{0}\\'\n", VCEnv.VSInstallDir));
+            if (VCEnv != null)
+            {
+                AddText(string.Format(".VSBasePath = '{0}\\'\n", VCEnv.VSInstallDir));
                 AddText(string.Format(".WindowsSDKBasePath = '{0}'\n", VCEnv.WindowsSDKDir));
 
                 AddText("Compiler('UE4ResourceCompiler') \n{\n");
@@ -552,10 +567,6 @@ namespace UnrealBuildTool
                 AddText("\t\t'$Root$/mspdbcore.dll'\n");
 
                 int platformVersionNumber = 140;
-                if (WindowsPlatform.Compiler == WindowsCompiler.VisualStudio2013)
-                {
-                    platformVersionNumber = 120;
-                }
 
                 AddText(string.Format("\t\t'$Root$/mspft{0}.dll'\n", platformVersionNumber));
 				AddText(string.Format("\t\t'$Root$/msobj{0}.dll'\n", platformVersionNumber));
@@ -568,7 +579,7 @@ namespace UnrealBuildTool
                  * Linker Path: C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Tools\MSVC\14.10.25017\bin\HostX64\x64
                  * Strangely as well the platform version number is 150 instead of the expected 140
                 */
-                if (WindowsPlatform.Compiler == WindowsCompiler.VisualStudio2017)
+                if (VCEnv.Compiler == WindowsCompiler.VisualStudio2017)
                 {
                     MSCRTPath = Path.GetFullPath(Path.Combine(LinkerRoot.Replace("Tools", "Redist"), @"..\..\..\", @"onecore\x64\Microsoft.VC150.CRT"));
                 }
@@ -988,10 +999,10 @@ namespace UnrealBuildTool
 			//Interesting flags for FASTBuild: -nostoponerror, -verbose, -monitor (if FASTBuild Monitor Visual Studio Extension is installed!)
             string FBCommandLine = string.Format("-monitor -summary {0} {1} -ide -config {2} -j{3}", distArgument, cacheArgument, BffFilePath, GetCompilerCPUCount());
 
-			ProcessStartInfo FBStartInfo = new ProcessStartInfo(string.IsNullOrEmpty(FBuildExePathOverride) ? "fbuild" : FBuildExePathOverride, FBCommandLine);
+            ProcessStartInfo FBStartInfo = new ProcessStartInfo(string.IsNullOrEmpty(FBuildExePathOverride) ? "fbuild" : FBuildExePathOverride, FBCommandLine);
 
 			FBStartInfo.UseShellExecute = false;
-			FBStartInfo.WorkingDirectory = Path.Combine(BuildConfiguration.RelativeEnginePath, "Source");
+			FBStartInfo.WorkingDirectory = Path.Combine(UnrealBuildTool.EngineSourceDirectory.FullName);
 
 			try
 			{
