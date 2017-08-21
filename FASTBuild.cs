@@ -519,10 +519,10 @@ namespace UnrealBuildTool
             */
             if (VCEnv.Compiler == WindowsCompiler.VisualStudio2017)
             {
-                string MSCRTPath = Path.GetFullPath(Path.Combine(VCEnv.LinkerPath.Directory.ToString().Replace("Tools", "Redist"), @"..\..\..\", "x64", "Microsoft.VC150.CRT"));
-                if (Directory.Exists(MSCRTPath))
+                string OldVCPath = Path.GetFullPath(Path.Combine(VCEnv.LinkerPath.Directory.ToString().Replace("Tools", "Redist"), @"..\..\..\", "x64", "Microsoft.VC150.CRT"));
+                if (Directory.Exists(OldVCPath))
                 {
-                    return MSCRTPath;
+                    return OldVCPath;
                 }
 
                 /* 
@@ -536,22 +536,14 @@ namespace UnrealBuildTool
                 // + 1 so we grab the first number in the version (e.g.) 14.1 instead of just 14
                 string CRTVersion = VersionFileContent.Remove(MajorSeperatorIndex, 1).Substring(0, MajorSeperatorIndex + 1);
 
-                DirectoryReference VS153Path = DirectoryReference.Combine(VCEnv.VCInstallDir, "Redist", "MSVC", "14.11.25415", "onecore", "x64", string.Format("Microsoft.VC{0}.CRT", CRTVersion));
-                if (DirectoryReference.Exists(VS153Path))
+                DirectoryReference NewVCPath = DirectoryReference.Combine(VCEnv.VCInstallDir, "Redist", "MSVC", "14.11.25415", "onecore", "x64", string.Format("Microsoft.VC{0}.CRT", CRTVersion));
+                if (DirectoryReference.Exists(NewVCPath))
                 {
-                    return VS153Path.ToString();
+                    return NewVCPath.ToString();
                 }
 
-                //C:\Program Files(x86)\Microsoft Visual Studio\2017\Professional\VC\Redist\MSVC\14.11.25415\x64\Microsoft.VC141.CRT
-                //C:\Program Files(x86)\Microsoft Visual Studio\2017\Professional\VC\Redist\MSVC\14.11.25325\x64\Microsoft.VC141.CRT
-                //C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Redist\MSVC\14.11.25325\x64\Microsoft.VC141.CRT
-                //C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Redist\MSVC\14.11.25415\onecore\x64\Microsoft.VC141.CRT
-
-                Console.WriteLine(VS153Path);
-                Console.WriteLine(MSCRTPath);
-
                 // We didn't find the Directory
-                throw new BuildException("MSCRT Path could not be found in {0} or {1}", VS153Path, MSCRTPath);
+                throw new BuildException("MSCRT Path could not be found in {0} or {1}", OldVCPath, NewVCPath);
             }
             else
             {
