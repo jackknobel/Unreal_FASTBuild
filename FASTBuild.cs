@@ -1,6 +1,7 @@
 ﻿// Copyright 2016 Yassine Riahi and Liam Flookes. Provided under a MIT License, see license file on github.
+// Edited by Jack Knobel
 // Used to generate a fastbuild .bff file from UnrealBuildTool to allow caching and distributed builds. 
-// Tested with Windows 10, Visual Studio 2015, Unreal Engine 4.15
+// Tested with Windows 10, Windows 7, Visual Studio 2015/2017 and Unreal Engine 4.18
 // Durango and Orbis will likely require some modifications.
 using System;
 using System.Collections;
@@ -8,6 +9,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Diagnostics;
 using System.Linq;
+using Tools.DotNETCommon;
 
 namespace UnrealBuildTool
 {
@@ -19,7 +21,7 @@ namespace UnrealBuildTool
         public static string FBuildExePathOverride = Path.Combine(UnrealBuildTool.EngineDirectory.FullName, "Extras", "FastBuild");
 
         // Controls network build distribution
-        private bool bEnableDistribution = true;
+        private bool bEnableDistribution = false;
 
         // Controls whether to use caching at all. CachePath and CacheMode are only relevant if this is enabled.
         private bool bEnableCaching = false;
@@ -27,20 +29,6 @@ namespace UnrealBuildTool
         // Location of the shared cache, it could be a local or network path (i.e: @"\\DESKTOP-BEAST\FASTBuildCache").
         // Only relevant if bEnableCaching is true;
         private string CachePath = ""; //@"\\YourCacheFolderPath"; 
-
-        /// <summary>
-        /// Processor count multiplier for local execution. Can be below 1 to reserve CPU for other tasks.
-        /// Note that you can set this to a larger value to get slightly faster build times in many cases,
-        /// but your computer's responsiveness during compiling may be much worse.
-        /// </summary>
-        [XmlConfigFile(Category = "BuildConfiguration")]
-        double ProcessorCountMultiplier = 1.0;
-
-        /// <summary>
-        /// Maximum processor count for local execution. 
-        /// </summary>
-        [XmlConfigFile(Category = "BuildConfiguration")]
-        int MaxProcessorCount = int.MaxValue;
 
         public enum eCacheMode
         {
@@ -164,46 +152,13 @@ namespace UnrealBuildTool
             }
         }
 
-        // Taken from UBS/LocalExecutor. Used to determine how many cores we can use on this system
-        private int GetCompilerCPUCount()
-        {
-            // Use WMI to figure out physical cores, excluding hyper threading.
-            int NumCores = Utils.GetPhysicalProcessorCount();
-            if (NumCores == -1)
-            {
-                NumCores = System.Environment.ProcessorCount;
-            }
-            // The number of actions to execute in parallel is trying to keep the CPU busy enough in presence of I/O stalls.
-            int MaxActionsToExecuteInParallel = 0;
-            if (NumCores < System.Environment.ProcessorCount && ProcessorCountMultiplier != 1.0)
-            {
-                // The CPU has more logical cores than physical ones, aka uses hyper-threading. 
-                // Use multiplier if provided
-                MaxActionsToExecuteInParallel = (int)(NumCores * ProcessorCountMultiplier);
-            }
-            else if (NumCores < System.Environment.ProcessorCount && NumCores > 4)
-            {
-                // The CPU has more logical cores than physical ones, aka uses hyper-threading. 
-                // Use average of logical and physical if we have "lots of cores"
-                MaxActionsToExecuteInParallel = (int)(NumCores + System.Environment.ProcessorCount) / 2;
-            }
-            // No hyper-threading. Only kicking off a task per CPU to keep machine responsive.
-            else
-            {
-                MaxActionsToExecuteInParallel = NumCores;
-            }
-
-            return Math.Max(1, Math.Min(MaxActionsToExecuteInParallel, MaxProcessorCount));
-        }
-
-
         //Run FASTBuild on the list of actions. Relies on fbuild.exe being in the path.
         public override bool ExecuteActions(List<Action> Actions, bool bLogDetailedActionStats)
         {
             bool FASTBuildResult = true;
             if (Actions.Count > 0)
             {
-                Console.WriteLine(string.Format("Performing {0} actions ({1} in parallel)", Actions.Count, GetCompilerCPUCount()));
+                Console.WriteLine(string.Format("Performing {0} actions ({1} in parallel)", Actions.Count, (int)(Utils.GetPhysicalProcessorCount() + System.Environment.ProcessorCount) / 2));
                 DetectBuildType(Actions);
                 string FASTBuildFilePath = Path.Combine(UnrealBuildTool.EngineDirectory.FullName, "Intermediate", "fbuild.bff");
                 CreateBffFile(Actions, FASTBuildFilePath);
@@ -511,14 +466,15 @@ namespace UnrealBuildTool
             /* In VS17 version 15.2 and below we could simply replace the tools folder name with Redist, change the path from the version number onwards 
              * and use VC150 instead of the expected VC140. e.g:
              * Linker Path: C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Tools\MSVC\14.10.25017\bin\HostX64\x64
-             * MSCRT Path: C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Redist\MSVC\14.10.25017\onecore\x64\Microsoft.VC150.CRT
+             * MSCRT Path: C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\VC\Redist\MSVC\14.10.25017\x64\Microsoft.VC150.CRT
              * 
              * In VS17 15.3 two things changed. The Version numbers no longer match for library manager path and they corrected the CRT directory to use 140
              * instead of the 150 found in previous versions
              * TODO: Work out how to pragmatically get Visual Studio Version Number and ideally how to get the MSVC version number
             */
             if (VCEnv.Compiler == WindowsCompiler.VisualStudio2017)
-            {
+            { 
+				// If we are using a version old of VS (Pre VS 15.3) then this will succeed
                 string OldVCPath = Path.GetFullPath(Path.Combine(VCEnv.LinkerPath.Directory.ToString().Replace("Tools", "Redist"), @"..\..\..\", "x64", "Microsoft.VC150.CRT"));
                 if (Directory.Exists(OldVCPath))
                 {
@@ -533,18 +489,50 @@ namespace UnrealBuildTool
                 string VersionFileContent = File.ReadAllText(FileReference.Combine(VCEnv.VCInstallDir, "Auxiliary", "Build", "Microsoft.VCToolsVersion.default.txt").FullName).Trim();
 
                 int MajorSeperatorIndex = VersionFileContent.IndexOf(".");
+
                 // + 1 so we grab the first number in the version (e.g.) 14.1 instead of just 14
                 string CRTVersion = VersionFileContent.Remove(MajorSeperatorIndex, 1).Substring(0, MajorSeperatorIndex + 1);
 
-                DirectoryReference NewVCPath = DirectoryReference.Combine(VCEnv.VCInstallDir, "Redist", "MSVC", "14.11.25415", "onecore", "x64", string.Format("Microsoft.VC{0}.CRT", CRTVersion));
+				// Get our base MSVC dir
+				DirectoryReference MSVCDir = DirectoryReference.Combine(VCEnv.VCInstallDir, "Redist", "MSVC");
+
+				// Find the right directory
+				string[] MSVCSubDirs = Directory.GetDirectories(MSVCDir.ToString());
+				string MSVCVersionDir =  null;
+				foreach(string SubDir in MSVCSubDirs)
+				{
+					// Get our directory info
+					DirectoryInfo Directory = new DirectoryInfo(SubDir);
+
+					// The directory we are looking is a version number, so let's remove the dots and check that only digits exist
+					if (Directory.Name.Replace(".", "").All(char.IsDigit))
+					{
+						MSVCVersionDir = SubDir;
+						break;
+					}
+				}
+
+				//Check our version directory is valid
+				if(MSVCVersionDir == null)
+				{
+					throw new BuildException("Could not find correct MSVC Version path at {0}", MSVCDir);
+				}
+				else
+				{
+					// Combine it with our existing directory
+					MSVCDir = DirectoryReference.Combine(MSVCDir, MSVCVersionDir);
+				}
+
+				// Combine the resulting path
+				DirectoryReference NewVCPath = DirectoryReference.Combine(MSVCDir, "x64", string.Format("Microsoft.VC{0}.CRT", CRTVersion));
                 if (DirectoryReference.Exists(NewVCPath))
                 {
                     return NewVCPath.ToString();
                 }
 
                 // We didn't find the Directory
-                throw new BuildException("MSCRT Path could not be found in {0} or {1}", OldVCPath, NewVCPath);
-            }
+                throw new BuildException("MSCRT Path could not be found in {0} or {1}", OldVCPath, NewVCPath);		
+			}
             else
             {
                 return string.Format("$VSBasePath$/VC/redist/x64/Microsoft.VC{0}.CRT", platformVersionNumber);
@@ -1033,7 +1021,7 @@ namespace UnrealBuildTool
             string distArgument = bEnableDistribution ? "-dist" : "";
 
             //Interesting flags for FASTBuild: -nostoponerror, -verbose, -monitor (if FASTBuild Monitor Visual Studio Extension is installed!)
-            string FBCommandLine = string.Format("-monitor -summary {0} {1} -ide -config {2} -j{3}", distArgument, cacheArgument, BffFilePath, GetCompilerCPUCount());
+            string FBCommandLine = string.Format("-monitor -summary {0} {1} -ide -config {2}", distArgument, cacheArgument, BffFilePath);
 
             ProcessStartInfo FBStartInfo = new ProcessStartInfo(string.IsNullOrEmpty(FBuildExePathOverride) ? "fbuild" : FBuildExePathOverride, FBCommandLine);
 
