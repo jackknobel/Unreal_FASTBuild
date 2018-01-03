@@ -1,5 +1,5 @@
 # Unreal_FASTBuild
-Allows the usage of FASTBuild with Unreal Engine 4 with a few minor modifications. It supports Visual Studio 2015, 2017, Windows 8 and 10 SDK and UE4 4.15, although you should be able to use this with previous versions of UE4 by looking at the history of the file (and tags from 4.18)
+Allows the usage of FASTBuild with Unreal Engine 4 with a few minor modifications. It supports Visual Studio 2015, 2017, Windows 8 and 10 SDK and UE4 4.18, although you should be able to use this with previous versions of UE4 by looking at the history of the file (and tags from 4.18 onwards)
 
 To use, place the under Engine/Source/Programs/UnrealBuildTool/System/ and add to the UnrealBuildTool project or regenerate the projects. You can then call it from ExecuteActions() in ActionGraph.cs a similar manner to XGE, for 4.15 it will look something like it does in the gist here: https://gist.github.com/liamkf/9e8a660be117c85428054fe76dfd5eff
 
