@@ -158,7 +158,7 @@ namespace UnrealBuildTool
             bool FASTBuildResult = true;
             if (Actions.Count > 0)
             {
-                Console.WriteLine(string.Format("Performing {0} actions ({1} in parallel)", Actions.Count, (int)(Utils.GetPhysicalProcessorCount() + System.Environment.ProcessorCount) / 2));
+                Console.WriteLine(string.Format("Performing {0} actions ({1} in parallel)", Actions.Count, System.Environment.ProcessorCount));
                 DetectBuildType(Actions);
                 string FASTBuildFilePath = Path.Combine(UnrealBuildTool.EngineDirectory.FullName, "Intermediate", "fbuild.bff");
                 CreateBffFile(Actions, FASTBuildFilePath);
